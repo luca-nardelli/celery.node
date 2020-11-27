@@ -1,9 +1,14 @@
 import Base from "./base";
 import { Message } from "../kombu/message";
+import {EventMessage} from './event-message';
+import uuid = require('uuid');
+import { v4 } from "uuid";
 
 export default class Worker extends Base {
   handlers: object = {};
   activeTasks: Set<Promise<any>> = new Set();
+  clock = 0;
+  processed = 0;
 
   /**
    * register task handler on worker handlers
@@ -41,7 +46,7 @@ export default class Worker extends Base {
    */
   public start(): Promise<any> {
     console.info("celery.node worker start...");
-    console.info(`registed task: ${Object.keys(this.handlers)}`);
+    console.info(`registered tasks: ${Object.keys(this.handlers)}`);
     return this.run().catch(err => console.error(err));
   }
 
@@ -52,7 +57,11 @@ export default class Worker extends Base {
    * @returns {Promise}
    */
   private run(): Promise<any> {
-    return this.isReady().then(() => this.processTasks());
+    return this.isReady().then(async () => {
+      await this.sendWorkerOnline();
+      setInterval(() => this.sendWorkerHeartbeat(),5000);
+      this.processTasks();
+    });
   }
 
   /**
@@ -83,7 +92,6 @@ export default class Worker extends Base {
       if (!message) {
         return Promise.resolve();
       }
-
       let payload = null;
       let taskName = message.headers["task"];
       if (!taskName) {
@@ -136,12 +144,15 @@ export default class Worker extends Base {
         throw new Error(`Missing process handler for task ${taskName}`);
       }
 
+      const uuid = headers.id;
+      this.sendTaskReceived({name: taskName,uuid,args,kwargs});
       console.info(
         `celery.node Received task: ${taskName}[${taskId}], args: ${args}, kwargs: ${JSON.stringify(
           kwargs
         )}`
       );
 
+      this.sendTaskStarted({uuid});
       const timeStart = process.hrtime();
       const taskPromise = handler(...args, kwargs).then(result => {
         const diff = process.hrtime(timeStart);
@@ -150,7 +161,9 @@ export default class Worker extends Base {
             diff[1] / 1e9}s: ${result}`
         );
         this.backend.storeResult(taskId, result, "SUCCESS");
+        this.sendTaskSucceeded({runtime: diff[0] + diff[1] / 1e9, uuid});
         this.activeTasks.delete(taskPromise);
+        this.processed++;
       });
 
       // record the executing task
@@ -179,5 +192,60 @@ export default class Worker extends Base {
   // eslint-disable-next-line class-methods-use-this
   public stop(): any {
     throw new Error("not implemented yet");
+  }
+
+  private async sendWorkerOnline(): Promise<void>{
+    const msg = new EventMessage(this.clock++,{
+      type: 'worker-online',
+    },{},{
+      exchange: 'celeryev',
+    });
+    return this.broker.publish(msg.body,msg.properties.exchange,msg.properties.routing_key,msg.headers,msg.properties);
+  }
+
+  private async sendWorkerHeartbeat(): Promise<void>{
+    const msg = new EventMessage(this.clock++,{
+      type: 'worker-heartbeat',
+      active: this.activeTasks.size,
+      processed: this.processed,
+    },{},{
+      exchange: 'celeryev',
+    });
+    return this.broker.publish(msg.body,msg.properties.exchange,msg.properties.routing_key,msg.headers,msg.properties);
+  }
+
+  private async sendTaskSucceeded(data: {runtime: number, uuid: string}): Promise<void>{
+    const msg = new EventMessage(this.clock++,{
+      type: 'task-succeeded',
+      runtime: data.runtime,
+      uuid: data.uuid,
+      result: 'ok',
+    },{},{
+      exchange: 'celeryev',
+    });
+    return this.broker.publish(msg.body,msg.properties.exchange,msg.properties.routing_key,msg.headers,msg.properties);
+  }
+
+  private async sendTaskReceived(data: {name: string, uuid: string, args?: any[], kwargs?: object}): Promise<void>{
+    const msg = new EventMessage(this.clock++,{
+      type: 'task-received',
+      ...data,
+    },{},{
+      exchange: 'celeryev',
+    });
+    if(msg.body.kwargs && typeof msg.body.kwargs === 'object') {
+      msg.body.kwargs = JSON.stringify(msg.body.kwargs)
+    }
+    return this.broker.publish(msg.body,msg.properties.exchange,msg.properties.routing_key,msg.headers,msg.properties);
+  }
+
+  private async sendTaskStarted(data: {uuid: string}): Promise<void>{
+    const msg = new EventMessage(this.clock++,{
+      type: 'task-received',
+      ...data,
+    },{},{
+      exchange: 'celeryev',
+    });
+    return this.broker.publish(msg.body,msg.properties.exchange,msg.properties.routing_key,msg.headers,msg.properties);
   }
 }

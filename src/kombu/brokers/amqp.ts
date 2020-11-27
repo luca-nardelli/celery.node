@@ -115,6 +115,33 @@ export default class AMQPBroker implements CeleryBroker {
     queue: string,
     callback: (message: Message) => void
   ): Promise<amqplib.Replies.Consume> {
+
+    // this.channel.then(async(ch) => {
+    //   await ch.assertQueue(`${queue}.pidbox`,{
+    //     autoDelete: true,
+    //     expires: 10000,
+    //     messageTtl: 300000,
+    //   })
+    //   await ch.bindQueue(`${queue}.pidbox`,'celery.pidbox','');
+    //   return ch.consume(`${queue}.pidbox`, rawMsg => {
+    //     ch.ack(rawMsg);
+    //     // now supports only application/json of content-type
+    //     if (rawMsg.properties.contentType !== "application/json") {
+    //       throw new Error(
+    //         `unsupported content type ${rawMsg.properties.contentType}`
+    //       );
+    //     }
+    //
+    //     // now supports only utf-9 of content-encoding
+    //     if (rawMsg.properties.contentEncoding !== "utf-8") {
+    //       throw new Error(
+    //         `unsupported content encoding ${rawMsg.properties.contentEncoding}`
+    //       );
+    //     }
+    //     const parsed = new AMQPMessage(rawMsg);
+    //     console.log(parsed.decode());
+    //   })
+    // })
     return this.channel
       .then(ch =>
         ch
@@ -127,26 +154,31 @@ export default class AMQPBroker implements CeleryBroker {
           })
           .then(() => Promise.resolve(ch))
       )
-      .then(ch =>
-        ch.consume(queue, rawMsg => {
-          ch.ack(rawMsg);
+      .then(ch => {
+          ch.prefetch(1); // Prefetch 1 message at a time
+          return ch.consume(queue, rawMsg => {
+            // now supports only application/json of content-type
+            if (rawMsg.properties.contentType !== "application/json") {
+              throw new Error(
+                `unsupported content type ${rawMsg.properties.contentType}`
+              );
+            }
 
-          // now supports only application/json of content-type
-          if (rawMsg.properties.contentType !== "application/json") {
-            throw new Error(
-              `unsupported content type ${rawMsg.properties.contentType}`
-            );
-          }
+            // now supports only utf-9 of content-encoding
+            if (rawMsg.properties.contentEncoding !== "utf-8") {
+              throw new Error(
+                `unsupported content encoding ${rawMsg.properties.contentEncoding}`
+              );
+            }
 
-          // now supports only utf-9 of content-encoding
-          if (rawMsg.properties.contentEncoding !== "utf-8") {
-            throw new Error(
-              `unsupported content encoding ${rawMsg.properties.contentEncoding}`
-            );
-          }
+            try {
+              callback(new AMQPMessage(rawMsg));
+            } catch (e) {
 
-          callback(new AMQPMessage(rawMsg));
-        })
+            }
+            ch.ack(rawMsg); // Ack here to prevent message buildup
+          })
+        }
       );
   }
 }
