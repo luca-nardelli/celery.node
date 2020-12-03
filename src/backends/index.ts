@@ -1,11 +1,16 @@
 import * as url from "url";
 import RedisBackend from "./redis";
 import AMQPBackend from "./amqp";
+import RPCBackend from './rpc';
+
+export interface StoreResultOpts {
+  replyTo: string;
+}
 
 export interface CeleryBackend {
   isReady: () => Promise<any>;
   disconnect: () => Promise<any>;
-  storeResult: (taskId: string, result: any, state: string) => Promise<any>;
+  storeResult: (taskId: string, result: any, state: string, opts?: StoreResultOpts) => Promise<any>;
   getTaskMeta: (taskId: string) => Promise<any>;
 }
 
@@ -14,7 +19,7 @@ export interface CeleryBackend {
  * @private
  * @constant
  */
-const supportedProtocols = ["redis", "amqp"];
+const supportedProtocols = ["redis", "amqp", "rpc"];
 
 /**
  * takes url string and after parsing scheme of url, returns protocol.
@@ -49,6 +54,10 @@ export function newCeleryBackend(
 
   if (brokerProtocol === "amqp") {
     return new AMQPBackend(CELERY_BACKEND, CELERY_BACKEND_OPTIONS);
+  }
+
+  if (brokerProtocol === "rpc") {
+    return new RPCBackend();
   }
 
   // do not reach here.

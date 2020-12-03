@@ -3,6 +3,7 @@ import { Message } from "../kombu/message";
 import {EventMessage} from './event-message';
 import uuid = require('uuid');
 import { v4 } from "uuid";
+import getError = Mocha.utils.getError;
 
 export default class Worker extends Base {
   handlers: object = {};
@@ -88,6 +89,7 @@ export default class Worker extends Base {
   }
 
   public createTaskHandler(): Function {
+    // See https://github.com/celery/celery/blob/master/celery/worker/strategy.py
     const onTaskReceived = (message: Message): any => {
       if (!message) {
         return Promise.resolve();
@@ -146,25 +148,35 @@ export default class Worker extends Base {
 
       const uuid = headers.id;
       this.sendTaskReceived({name: taskName,uuid,args,kwargs});
-      console.info(
-        `celery.node Received task: ${taskName}[${taskId}], args: ${args}, kwargs: ${JSON.stringify(
-          kwargs
-        )}`
-      );
+      // console.info(
+      //   `celery.node Received task: ${taskName}[${taskId}], args: ${args}, kwargs: ${JSON.stringify(
+      //     kwargs
+      //   )}`, handler
+      // );
 
       this.sendTaskStarted({uuid});
       const timeStart = process.hrtime();
-      const taskPromise = handler(...args, kwargs).then(result => {
+      const taskPromise: Promise<any> = handler(args, kwargs)
+        .then(result => {
         const diff = process.hrtime(timeStart);
-        console.info(
-          `celery.node Task ${taskName}[${taskId}] succeeded in ${diff[0] +
-            diff[1] / 1e9}s: ${result}`
-        );
-        this.backend.storeResult(taskId, result, "SUCCESS");
-        this.sendTaskSucceeded({runtime: diff[0] + diff[1] / 1e9, uuid});
+        // console.info(
+        //   `celery.node Task ${taskName}[${taskId}] succeeded in ${diff[0] +
+        //     diff[1] / 1e9}s: ${result}`
+        // );
+        this.backend.storeResult(taskId, result, "SUCCESS",{replyTo: message.properties['replyTo'] || undefined});
+        this.sendTaskSucceeded({runtime: diff[0] + diff[1] / 1e9, uuid, result});
         this.activeTasks.delete(taskPromise);
         this.processed++;
-      });
+      })
+        .catch(error => {
+          console.error(`Task ${taskName}[${taskId}] failed`, error);
+          this.backend.storeResult(taskId, {exc_type: 'error', exc_message: error.toString()},
+            "FAILURE",{replyTo: message.properties['replyTo'] || undefined});
+          this.sendTaskFailed({exception: 'error', traceback: error.toString()});
+          this.activeTasks.delete(taskPromise);
+          this.processed++;
+        })
+      ;
 
       // record the executing task
       this.activeTasks.add(taskPromise);
@@ -214,12 +226,20 @@ export default class Worker extends Base {
     return this.broker.publish(msg.body,msg.properties.exchange,msg.properties.routing_key,msg.headers,msg.properties);
   }
 
-  private async sendTaskSucceeded(data: {runtime: number, uuid: string}): Promise<void>{
+  private async sendTaskSucceeded(data: {runtime: number, uuid: string, result: any}): Promise<void>{
     const msg = new EventMessage(this.clock++,{
       type: 'task-succeeded',
-      runtime: data.runtime,
-      uuid: data.uuid,
-      result: 'ok',
+      ...data
+    },{},{
+      exchange: 'celeryev',
+    });
+    return this.broker.publish(msg.body,msg.properties.exchange,msg.properties.routing_key,msg.headers,msg.properties);
+  }
+
+  private async sendTaskFailed(data: {exception: string, traceback: string}): Promise<void>{
+    const msg = new EventMessage(this.clock++,{
+      type: 'task-failed',
+      ...data,
     },{},{
       exchange: 'celeryev',
     });
@@ -241,7 +261,7 @@ export default class Worker extends Base {
 
   private async sendTaskStarted(data: {uuid: string}): Promise<void>{
     const msg = new EventMessage(this.clock++,{
-      type: 'task-received',
+      type: 'task-started',
       ...data,
     },{},{
       exchange: 'celeryev',

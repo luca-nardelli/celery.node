@@ -2,6 +2,7 @@ import { v4 } from "uuid";
 import Base from "./base";
 import Task from "./task";
 import { AsyncResult } from "./result";
+import RPCBackend from '../backends/rpc';
 
 class TaskMessage {
   constructor(
@@ -131,6 +132,12 @@ export default class Client extends Base {
   ): AsyncResult {
     taskId = taskId || v4();
     const message = this.createTaskMessage(taskId, taskName, args, kwargs);
+
+    // Need to set this to make the worker reply
+    if(this.backend instanceof RPCBackend){
+      message.properties['replyTo'] = 'amq.rabbitmq.reply-to';
+      this.backend.expectReply(taskId);
+    }
     this.sendTaskMessage(taskName, message);
 
     const result = new AsyncResult(taskId, this.backend);

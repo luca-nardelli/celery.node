@@ -1,6 +1,7 @@
 import * as amqplib from "amqplib";
 import { CeleryBroker } from ".";
 import { Message } from "../message";
+import RPCBackend from '../../backends/rpc';
 
 class AMQPMessage extends Message {
   constructor(payload: amqplib.ConsumeMessage) {
@@ -18,6 +19,7 @@ export default class AMQPBroker implements CeleryBroker {
   connect: Promise<amqplib.Connection>;
   channel: Promise<amqplib.Channel>;
   queue: string;
+  rpcBackend: RPCBackend; // Reference used for replyTo Functionality
 
   /**
    * AMQP broker class

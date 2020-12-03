@@ -5,6 +5,8 @@
 import { CeleryConf, defaultConf } from "./conf";
 import { newCeleryBroker, CeleryBroker } from "../kombu/brokers";
 import { newCeleryBackend, CeleryBackend } from "../backends";
+import RPCBackend from '../backends/rpc';
+import AMQPBroker from '../kombu/brokers/amqp';
 
 export default class Base {
   _backend: CeleryBackend;
@@ -41,6 +43,15 @@ export default class Base {
         this.conf.CELERY_BACKEND,
         this.conf.CELERY_BACKEND_OPTIONS
       );
+      if(this._backend instanceof RPCBackend){
+        if(this.broker instanceof AMQPBroker){
+          // Need to set these so that broker and backend can communicate
+          this.broker.rpcBackend = this._backend;
+          this._backend.channel = this.broker.channel;
+        } else {
+          throw new Error('rpc backend only works if paired with AMQP broker');
+        }
+      }
     }
 
     return this._backend;
