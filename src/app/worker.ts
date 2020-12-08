@@ -162,11 +162,11 @@ export default class Worker extends Base {
         this.activeTasks.delete(taskPromise);
         this.processed++;
       })
-        .catch(error => {
-          console.error(`Task ${taskName}[${taskId}] failed`, error);
-          this.backend.storeResult(taskId, {exc_type: 'error', exc_message: error.toString()},
+        .catch((error : Error) => {
+          console.error(`Task ${taskName}[${taskId}] failed ${error.message}`);
+          this.backend.storeResult(taskId, {exc_type: 'error', exc_message: error.message},
             "FAILURE",{replyTo: message.properties['replyTo'] || undefined});
-          this.sendTaskFailed({exception: 'error', traceback: error.toString()});
+          this.sendTaskFailed({exception: 'error', traceback: error.stack});
           this.activeTasks.delete(taskPromise);
           this.processed++;
         })
