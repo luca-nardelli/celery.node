@@ -22,6 +22,7 @@ export default class RPCBackend implements CeleryBackend {
   public async isReady(): Promise<void> {
     const ch = await this.channel; // Need to use the same channel we use to publish
     if (this._replyQueueSubscription === undefined) {
+      // console.log("Consuming from pseudo queue");
       // Start consuming to trigger creation of the pseudo-queue
       this._replyQueueSubscription = ch.consume('amq.rabbitmq.reply-to', msg => {
         if (msg.properties.contentType !== "application/json") {

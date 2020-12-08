@@ -74,7 +74,7 @@ export default class AMQPBroker implements CeleryBroker {
    *
    * @returns {Promise}
    */
-  public publish(
+  public async publish(
     body: object | [Array<any>, object, object],
     exchange: string,
     routingKey: string,
@@ -85,18 +85,21 @@ export default class AMQPBroker implements CeleryBroker {
     const contentType = "application/json";
     const contentEncoding = "utf-8";
 
+    // Create queue only if a routing key is specified
+    // TODO Maybe we can remove this here
+    if(routingKey){
+      await this.channel.then(ch =>
+        ch.assertQueue(routingKey, {
+          durable: true,
+          autoDelete: false,
+          exclusive: false,
+          // nowait: false,
+          arguments: null
+        })
+      );
+    }
+
     return this.channel
-      .then(ch =>
-        ch
-          .assertQueue(routingKey, {
-            durable: true,
-            autoDelete: false,
-            exclusive: false,
-            // nowait: false,
-            arguments: null
-          })
-          .then(() => Promise.resolve(ch))
-      )
       .then(ch =>
         ch.publish(exchange, routingKey, Buffer.from(messageBody), {
           contentType,
@@ -178,7 +181,7 @@ export default class AMQPBroker implements CeleryBroker {
             } catch (e) {
 
             }
-            ch.ack(rawMsg); // Ack here to prevent message buildup
+            ch.ack(rawMsg); // Ack here to prevent the worker from fetching too many messages
           })
         }
       );

@@ -1,9 +1,6 @@
 import Base from "./base";
 import { Message } from "../kombu/message";
 import {EventMessage} from './event-message';
-import uuid = require('uuid');
-import { v4 } from "uuid";
-import getError = Mocha.utils.getError;
 
 export default class Worker extends Base {
   handlers: object = {};
@@ -46,7 +43,7 @@ export default class Worker extends Base {
    * worker.start();
    */
   public start(): Promise<any> {
-    console.info("celery.node worker start...");
+    console.info(`celery.node worker starting on queue ${this.conf.CELERY_QUEUE}`);
     console.info(`registered tasks: ${Object.keys(this.handlers)}`);
     return this.run().catch(err => console.error(err));
   }
@@ -148,11 +145,8 @@ export default class Worker extends Base {
 
       const uuid = headers.id;
       this.sendTaskReceived({name: taskName,uuid,args,kwargs});
-      // console.info(
-      //   `celery.node Received task: ${taskName}[${taskId}], args: ${args}, kwargs: ${JSON.stringify(
-      //     kwargs
-      //   )}`, handler
-      // );
+      // console.info(`celery.node Received task: ${taskName}[${taskId}]`);
+      // console.info(`args: ${args}, kwargs: ${JSON.stringify(kwargs)}`)
 
       this.sendTaskStarted({uuid});
       const timeStart = process.hrtime();
