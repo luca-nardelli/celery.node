@@ -2,6 +2,10 @@ import * as url from "url";
 import RedisBroker from "./redis";
 import AMQPBroker from "./amqp";
 
+export interface SubscribeOpts {
+  concurrency: number;
+}
+
 export interface CeleryBroker {
   isReady: () => Promise<any>;
   disconnect: () => Promise<any>;
@@ -12,7 +16,7 @@ export interface CeleryBroker {
     headers: object,
     properties: object
   ) => Promise<any>;
-  subscribe: (queue: string, callback: Function) => Promise<any>;
+  subscribe: (queue: string, callback: Function, opts?: SubscribeOpts) => Promise<any>;
 }
 
 /**

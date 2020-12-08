@@ -1,5 +1,5 @@
 import * as amqplib from "amqplib";
-import { CeleryBroker } from ".";
+import {CeleryBroker, SubscribeOpts} from ".";
 import { Message } from "../message";
 import RPCBackend from '../../backends/rpc';
 
@@ -118,7 +118,8 @@ export default class AMQPBroker implements CeleryBroker {
    */
   public subscribe(
     queue: string,
-    callback: (message: Message) => void
+    callback: (message: Message) => void,
+    opts?: SubscribeOpts,
   ): Promise<amqplib.Replies.Consume> {
 
     // this.channel.then(async(ch) => {
@@ -160,8 +161,8 @@ export default class AMQPBroker implements CeleryBroker {
           .then(() => Promise.resolve(ch))
       )
       .then(ch => {
-          ch.prefetch(1); // Prefetch 1 message at a time
-          return ch.consume(queue, rawMsg => {
+          ch.prefetch(opts.concurrency || 1); // Prefetch messages
+          return ch.consume(queue, async rawMsg => {
             // now supports only application/json of content-type
             if (rawMsg.properties.contentType !== "application/json") {
               throw new Error(
@@ -177,9 +178,10 @@ export default class AMQPBroker implements CeleryBroker {
             }
 
             try {
-              callback(new AMQPMessage(rawMsg));
+              await callback(new AMQPMessage(rawMsg));
             } catch (e) {
-
+              console.error(e)
+              throw e;
             }
             ch.ack(rawMsg); // Ack here to prevent the worker from fetching too many messages
           })

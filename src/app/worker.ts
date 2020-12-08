@@ -7,6 +7,7 @@ export default class Worker extends Base {
   activeTasks: Set<Promise<any>> = new Set();
   clock = 0;
   processed = 0;
+  concurrency = 1;
 
   /**
    * register task handler on worker handlers
@@ -82,12 +83,12 @@ export default class Worker extends Base {
   private getConsumer(queue: string): Function {
     const onMessage = this.createTaskHandler();
 
-    return (): any => this.broker.subscribe(queue, onMessage);
+    return (): any => this.broker.subscribe(queue, onMessage,{concurrency: this.concurrency});
   }
 
   public createTaskHandler(): Function {
     // See https://github.com/celery/celery/blob/master/celery/worker/strategy.py
-    const onTaskReceived = (message: Message): any => {
+    const onTaskReceived = (message: Message): Promise<any> => {
       if (!message) {
         return Promise.resolve();
       }
