@@ -49,6 +49,9 @@ export default class AMQPBroker implements CeleryBroker {
             // nowait: false,
             arguments: null
           }),
+          ch.assertExchange("celeryev", "topic", {
+            durable: true,
+          }),
           ch.assertQueue(this.queue, {
             durable: true,
             autoDelete: false,
